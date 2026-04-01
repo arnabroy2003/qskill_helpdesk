@@ -1,22 +1,29 @@
-import os
+# import os
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify
 from flask_socketio import SocketIO, emit, join_room
 from supabase import create_client, Client
-from dotenv import load_dotenv
+# from dotenv import load_dotenv
 
-load_dotenv()
+# load_dotenv()
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'qskill_secret_key'
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 # Supabase Setup
-url = os.getenv("SUPABASE_URL")
-key = os.getenv("SUPABASE_KEY")
+# url = os.getenv("SUPABASE_URL")
+# key = os.getenv("SUPABASE_KEY")
+
+url = "https://rithbuogcwvjmzqoyrcj.supabase.co"
+key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJpdGhidW9nY3d2am16cW95cmNqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM4MzUxOTUsImV4cCI6MjA4OTQxMTE5NX0.mo-8nz5oT9uFdlJR2GiRUmLWI9crNf5E8JQm3Oz0Kb4"
+
 supabase: Client = create_client(url, key)
 
-ADMIN_USERNAME = os.getenv("ADMIN_USERNAME")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
+# ADMIN_USERNAME = os.getenv("ADMIN_USERNAME")
+# ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
+
+ADMIN_USERNAME = "tamasa@qskill.in"
+ADMIN_PASSWORD = "Tamasa@2005"
 
 # --- ROUTES ---
 
@@ -112,4 +119,4 @@ def handle_message(data):
     }, to=room)
 
 if __name__ == '__main__':
-    socketio.run(app, debug=True)
+    socketio.run(app, debug=True, use_reloader=False)
