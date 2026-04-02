@@ -110,51 +110,81 @@
     <script>
     const socket = io();
     const room = "{{ session['user_id'] }}";
-    const role = "{{ session['role'] }}"; // Get role from Flask
+    const role = "{{ session['role'] }}"; // Current logged-in user's role
 
-    // Join the room immediately on load
-    socket.emit('join', { room: room });
+    // Join the room immediately on load to receive real-time updates
+    socket.on('connect', () => {
+        socket.emit('join', { room: room });
+    });
 
-    function sendMessage() {
+    /**
+     * UPDATED: Using Fetch instead of Socket.emit
+     * This ensures the message reaches the Google Sheet on Vercel's serverless environment.
+     */
+    async function sendMessage() {
         const input = document.getElementById('message-input');
         const val = input.value.trim();
-        if(val) {
-            // FIX: We rely on the server-side session for the role, 
-            // but we send the room and message here.
-            socket.emit('send_message', {
-                room: room, 
-                message: val
-                // No need to send 'sender' here if you use the session fix above
-            });
-            input.value = '';
+        
+        if (val) {
+            // Save the message via standard HTTP POST
+            try {
+                const response = await fetch('/api/send_message', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        room: room,
+                        message: val
+                    })
+                });
+
+                if (response.ok) {
+                    input.value = ''; // Clear input only if save was successful
+                } else {
+                    console.error("Failed to send message to Google Sheets");
+                }
+            } catch (err) {
+                console.error("Network error:", err);
+            }
         }
     }
 
+    /**
+     * This listener remains the same. 
+     * It handles the real-time UI update when the server broadcasts the message.
+     */
     socket.on('receive_message', (data) => {
         const chatBox = document.getElementById('chat-box');
         
-        // FIX: Logic check
-        // If I am a student, and the message 'sender' is student -> Right Side
-        // If I am a student, and the message 'sender' is admin -> Left Side
-        const isStudent = data.sender === 'student';
-        const side = isStudent ? 'justify-end' : 'justify-start';
-        const bubbleClass = isStudent ? 'chat-bubble-user text-white' : 'chat-bubble-agent text-slate-200';
+        // Logic: determine if the message came from a student or admin for styling
+        const isStudentMessage = data.sender === 'student';
+        const side = isStudentMessage ? 'justify-end' : 'justify-start';
+        const bubbleClass = isStudentMessage ? 'chat-bubble-user text-white' : 'chat-bubble-agent text-slate-200';
         
         const messageHtml = `
             <div class="flex ${side} animate-fade-in mb-4">
                 <div class="${bubbleClass} px-5 py-3 rounded-[22px] max-w-[85%] md:max-w-md text-sm leading-relaxed shadow-lg">
                     ${data.message}
-                    <div class="text-[10px] opacity-50 mt-1 ${isStudent ? 'text-right' : 'text-left'}">
-                        Just now
+                    <div class="text-[10px] opacity-50 mt-1 ${isStudentMessage ? 'text-right' : 'text-left'}">
+                        ${data.timestamp || 'Just now'}
                     </div>
                 </div>
             </div>`;
         
         chatBox.insertAdjacentHTML('beforeend', messageHtml);
         
+        // Auto-scroll to bottom
         setTimeout(() => {
             chatBox.scrollTo({ top: chatBox.scrollHeight, behavior: 'smooth' });
         }, 50);
+    });
+
+    // Support for "Enter" key to send message
+    document.getElementById('message-input').addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') {
+            sendMessage();
+        }
     });
 
     // Handle window resize for mobile keyboard

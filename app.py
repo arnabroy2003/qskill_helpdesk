@@ -1,42 +1,34 @@
 import os
 import uuid
+import json
 from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify
 from flask_socketio import SocketIO, emit, join_room
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
-import json
 
 load_dotenv()
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'qskill_secret_key'
+app.config['SECRET_KEY'] = os.getenv("SECRET_KEY", "qskill_secret_key")
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 # --- GOOGLE SHEETS SETUP ---
 
-# scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-# creds = ServiceAccountCredentials.from_json_keyfile_name("creds.json", scope)
-# client = gspread.authorize(creds)
-
 def get_gspread_client():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    
-    # Try to load from Environment Variable (Vercel/Production)
     creds_json = os.getenv("GOOGLE_SHEETS_CREDS_JSON")
     
     if creds_json:
         creds_dict = json.loads(creds_json)
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     else:
-        # Fallback for local development (ensure creds.json is in your .gitignore)
         creds = ServiceAccountCredentials.from_json_keyfile_name("creds.json", scope)
     
     return gspread.authorize(creds)
 
 client = get_gspread_client()
-# Open the spreadsheet by name (ensure it's shared with the service account email)
 spreadsheet = client.open("help_desk")
 sheet_users = spreadsheet.worksheet("users")
 sheet_messages = spreadsheet.worksheet("messages")
@@ -60,13 +52,11 @@ def login():
     name = request.form.get('name')
     email = request.form.get('email')
     
-    # Fetch User
     users = get_all_records(sheet_users)
     user = next((u for u in users if u['email'] == email), None)
     
-    # Create User if not exists
     if not user:
-        user_id = str(uuid.uuid4())[:8] # Simple ID generation
+        user_id = str(uuid.uuid4())[:8]
         sheet_users.append_row([user_id, name, email])
         user = {"id": user_id, "name": name, "email": email}
     
@@ -80,16 +70,32 @@ def login():
 def chat():
     if 'user_id' not in session: return redirect(url_for('index'))
     
-    # Fetch History for this user
     all_msgs = get_all_records(sheet_messages)
     history = [m for m in all_msgs if str(m['user_id']) == str(session['user_id'])]
     
-    return render_template(
-        'chat.html',
-        history=history,
-        name=session['user_name'],
-        role=session.get('role')
-    )
+    return render_template('chat.html', history=history, name=session['user_name'], role=session.get('role'))
+
+# --- HYBRID MESSAGE ROUTE (Fixed for Vercel) ---
+
+@app.route('/api/send_message', methods=['POST'])
+def handle_message_api():
+    data = request.json
+    room = data.get('room')
+    msg_content = data.get('message')
+    sender = session.get('role', 'student') 
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # 1. Standard HTTP write to Google Sheet
+    sheet_messages.append_row([room, sender, msg_content, timestamp])
+    
+    # 2. Trigger Socket broadcast for real-time UI update
+    socketio.emit('receive_message', {
+        "message": msg_content,
+        "sender": sender,
+        "timestamp": "Just now"
+    }, to=room)
+    
+    return jsonify({"status": "success"}), 200
 
 @app.route('/admin-login', methods=['GET', 'POST'])
 def admin_login():
@@ -102,50 +108,25 @@ def admin_login():
 @app.route('/admin')
 def admin_panel():
     if session.get('role') != 'admin': return redirect(url_for('admin_login'))
-    
     users = get_all_records(sheet_users)
     all_messages = get_all_records(sheet_messages)
-    
-    # Attach last message to each user for the admin view
     for user in users:
         user_msgs = [m for m in all_messages if str(m['user_id']) == str(user['id'])]
         user['messages'] = user_msgs[-1:] if user_msgs else []
-        
     return render_template('admin.html', users=users)
 
 @app.route('/api/messages/<user_id>')
 def get_messages(user_id):
-    if session.get('role') != 'admin':
-        return jsonify({"error": "Unauthorized"}), 403
-    
+    if session.get('role') != 'admin': return jsonify({"error": "Unauthorized"}), 403
     all_msgs = get_all_records(sheet_messages)
     user_history = [m for m in all_msgs if str(m['user_id']) == str(user_id)]
-    
     return jsonify(user_history)
 
 # --- SOCKET EVENTS ---
 
 @socketio.on('join')
 def on_join(data):
-    room = data['room']
-    join_room(room)
-
-@socketio.on('send_message')
-def handle_message(data):
-    room = data['room']
-    msg_content = data['message']
-    sender = session.get('role', 'student') 
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    # Save to Google Sheet
-    # Order: user_id, sender, message, timestamp
-    sheet_messages.append_row([room, sender, msg_content, timestamp])
-    
-    emit('receive_message', {
-        "message": msg_content,
-        "sender": sender,
-        "timestamp": "Just now"
-    }, to=room)
+    join_room(data['room'])
 
 if __name__ == '__main__':
-    socketio.run(app, debug=True, use_reloader=False)
+    socketio.run(app, debug=True)
