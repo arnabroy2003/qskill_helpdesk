@@ -15,13 +15,27 @@ app.config['SECRET_KEY'] = 'qskill_secret_key'
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 # --- GOOGLE SHEETS SETUP ---
-creds_dict = json.loads(os.environ["GOOGLE_CREDENTIALS"].replace('\\n', '\n'))
 
-scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+# scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 # creds = ServiceAccountCredentials.from_json_keyfile_name("creds.json", scope)
-creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-client = gspread.authorize(creds)
+# client = gspread.authorize(creds)
 
+def get_gspread_client():
+    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    
+    # Try to load from Environment Variable (Vercel/Production)
+    creds_json = os.getenv("GOOGLE_SHEETS_CREDS_JSON")
+    
+    if creds_json:
+        creds_dict = json.loads(creds_json)
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    else:
+        # Fallback for local development (ensure creds.json is in your .gitignore)
+        creds = ServiceAccountCredentials.from_json_keyfile_name("creds.json", scope)
+    
+    return gspread.authorize(creds)
+
+client = get_gspread_client()
 # Open the spreadsheet by name (ensure it's shared with the service account email)
 spreadsheet = client.open("help_desk")
 sheet_users = spreadsheet.worksheet("users")
