@@ -3,3 +3,4 @@ Flask-SocketIO
 python-dotenv
 supabase
 eventlet
+gunicorn
