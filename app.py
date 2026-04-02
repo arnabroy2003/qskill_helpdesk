@@ -3,6 +3,7 @@ from flask import Flask, render_template, request, redirect, url_for, session, j
 from flask_socketio import SocketIO, emit, join_room
 from supabase import create_client, Client
 from dotenv import load_dotenv
+import requests
 
 load_dotenv()
 
@@ -13,6 +14,23 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 # Supabase Setup
 url = os.getenv("SUPABASE_URL")
 key = os.getenv("SUPABASE_KEY")
+
+print("RAW URL:", repr(url))
+print("RAW KEY:", repr(key[:20] if key else None))  # full key print korish na 😑
+
+if url:
+    url = url.strip()
+if key:
+    key = key.strip()
+
+print("CLEAN URL:", repr(url))
+
+# 🔥 Test request BEFORE supabase client
+try:
+    test_res = requests.get(url)
+    print("URL TEST STATUS:", test_res.status_code)
+except Exception as e:
+    print("URL TEST FAILED:", str(e))
 
 supabase: Client = create_client(url, key)
 
@@ -27,20 +45,40 @@ def index():
 
 @app.route('/login', methods=['POST'])
 def login():
-    name = request.form.get('name')
-    email = request.form.get('email')
-    
-    # Fetch or Create User
-    user_data = supabase.table('users').select("*").eq("email", email).execute()
-    if not user_data.data:
-        user_data = supabase.table('users').insert({"name": name, "email": email}).execute()
-    
-    user = user_data.data[0]
-    session['user_id'] = user['id']
-    session['user_name'] = user['name']
-    session['role'] = 'student'
-    
-    return redirect(url_for('chat'))
+    try:
+        name = request.form.get('name')
+        email = request.form.get('email')
+
+        print("LOGIN ATTEMPT:", name, email)
+
+        # 🔥 Supabase query debug
+        print("Querying Supabase...")
+
+        user_data = supabase.table('users').select("*").eq("email", email).execute()
+
+        print("Supabase response:", user_data.data)
+
+        if not user_data.data:
+            print("User not found, inserting...")
+            user_data = supabase.table('users').insert({
+                "name": name,
+                "email": email
+            }).execute()
+            print("Insert response:", user_data.data)
+
+        user = user_data.data[0]
+
+        session['user_id'] = user['id']
+        session['user_name'] = user['name']
+        session['role'] = 'student'
+
+        print("Login success for:", user['email'])
+
+        return redirect(url_for('chat'))
+
+    except Exception as e:
+        print("LOGIN ERROR:", str(e))
+        return "Login Failed - Check Logs", 500
 
 @app.route('/chat')
 def chat():
@@ -82,6 +120,11 @@ def get_messages(user_id):
         .execute()
     
     return jsonify(response.data)
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    print("GLOBAL ERROR:", str(e))
+    return "Something broke! Check logs 😑", 500
 
 # --- SOCKET EVENTS ---
 
