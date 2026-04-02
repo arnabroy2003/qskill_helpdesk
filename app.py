@@ -6,6 +6,7 @@ from flask_socketio import SocketIO, emit, join_room
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
+import json
 
 load_dotenv()
 
@@ -14,8 +15,11 @@ app.config['SECRET_KEY'] = 'qskill_secret_key'
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 # --- GOOGLE SHEETS SETUP ---
+creds_dict = json.loads(os.environ["GOOGLE_CREDENTIALS"].replace('\\n', '\n'))
+
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds = ServiceAccountCredentials.from_json_keyfile_name("creds.json", scope)
+# creds = ServiceAccountCredentials.from_json_keyfile_name("creds.json", scope)
+creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
 client = gspread.authorize(creds)
 
 # Open the spreadsheet by name (ensure it's shared with the service account email)
