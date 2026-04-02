@@ -1,6 +1,7 @@
 Flask
 Flask-SocketIO
 python-dotenv
-supabase
 eventlet
 gunicorn
+gspread
+oauth2client
